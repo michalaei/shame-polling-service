@@ -1,5 +1,6 @@
 import {DbConnector} from '../db/db-connector';
 import axios from 'axios';
+import {SocketsManager} from '../sockets-manager/sockets-manager';
 
 export interface IReality {
     warriorReality: number;
@@ -46,7 +47,20 @@ export class PollingService {
     static async setPoll(server: IServer, reality: IReality) {
         try {
             let startTime = Date.now();
-            let response = await axios.get(server.url);
+            try {
+                let response = await axios.get(server.url);
+            } catch (error) {
+                let query = `SELECT "isAlive" from reality${reality.warriorReality}.servers where id = ${server.id}`;
+                let isAliveData = await DbConnector.query(query);
+                let isAlive = isAliveData.rows[0].isAlive;
+                if (isAlive) {
+                    SocketsManager.sendMessage({server: server.name, reality: reality, status: 'down'});
+                    console.error(`Polling stage - failed getting answer from ${server.name} in reality ${reality.name}`);
+                    let updateQuery = `update reality${reality.warriorReality}.servers SET "isAlive"=false where id = ${server.id}`;
+                    await DbConnector.query(updateQuery);
+                }
+                throw new Error(error);
+            }
             let endTime = Date.now();
             let duration = endTime - startTime;
             console.log(`Polling stage - Reality : ${reality.name}, to Server: ${server.name}`);
